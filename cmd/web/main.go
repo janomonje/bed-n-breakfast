@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/janomonje/bed-n-breakfast/pkg/config"
-	"github.com/janomonje/bed-n-breakfast/pkg/handlers"
-	"github.com/janomonje/bed-n-breakfast/pkg/render"
+	"github.com/janomonje/bed-n-breakfast/internal/config"
+	"github.com/janomonje/bed-n-breakfast/internal/handlers"
+	"github.com/janomonje/bed-n-breakfast/internal/render"
 
 	"github.com/alexedwards/scs/v2"
 )
@@ -49,7 +49,7 @@ func main() {
 	fmt.Printf("Starting application in port %s", portNumber)
 	serve := &http.Server{
 		Addr:    portNumber,
-		Handler: routes(),
+		Handler: routes(&app),
 	}
 
 	err = serve.ListenAndServe()

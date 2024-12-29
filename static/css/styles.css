@@ -1,0 +1,28 @@
+.carousel-inner img {
+    height: 1000px;
+    object-fit: cover;
+  }
+
+  .my-footer {
+    height: 3rem;
+    background-color: lightgrey;
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+  }
+
+  .room-image {
+    max-width: 50%;
+  }
+
+  .notiecontainer {
+    box-shadow: none;
+  }
+
+  .datepicker {
+    z-index: 10000;
+  }

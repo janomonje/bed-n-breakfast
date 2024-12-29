@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/janomonje/bed-n-breakfast/pkg/config"
-	"github.com/janomonje/bed-n-breakfast/pkg/models"
+	"github.com/janomonje/bed-n-breakfast/internal/config"
+	"github.com/janomonje/bed-n-breakfast/internal/models"
+	"github.com/justinas/nosurf"
 )
 
 var app *config.AppConfig
@@ -19,12 +20,13 @@ func NewTemplates(a *config.AppConfig) {
 }
 
 // AddDefaultData passes data that is wanted available in every page
-func AddDefaultData(templateData *models.TemplateData) *models.TemplateData {
+func AddDefaultData(templateData *models.TemplateData, req *http.Request) *models.TemplateData {
+	templateData.CSRFToken = nosurf.Token(req)
 	return templateData
 }
 
 // RenderTemplate renders templates using html/template
-func RenderTemplate(w http.ResponseWriter, tmpl string, templateData *models.TemplateData) {
+func RenderTemplate(w http.ResponseWriter, tmpl string, templateData *models.TemplateData, req *http.Request) {
 
 	// gets the template cache fom the app config
 	var templateCache map[string]*template.Template
@@ -44,7 +46,7 @@ func RenderTemplate(w http.ResponseWriter, tmpl string, templateData *models.Tem
 
 	buffer := new(bytes.Buffer)
 
-	templateData = AddDefaultData(templateData)
+	templateData = AddDefaultData(templateData, req)
 
 	err := template.Execute(buffer, templateData)
 	if err != nil {
