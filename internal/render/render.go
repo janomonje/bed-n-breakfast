@@ -21,6 +21,9 @@ func NewTemplates(a *config.AppConfig) {
 
 // AddDefaultData passes data that is wanted available in every page
 func AddDefaultData(templateData *models.TemplateData, req *http.Request) *models.TemplateData {
+	templateData.Flash=app.Session.PopString(req.Context(), "flash")
+	templateData.Warning=app.Session.PopString(req.Context(), "warning")
+	templateData.Error=app.Session.PopString(req.Context(), "error")
 	templateData.CSRFToken = nosurf.Token(req)
 	return templateData
 }
