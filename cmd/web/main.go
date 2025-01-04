@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/janomonje/bed-n-breakfast/internal/config"
 	"github.com/janomonje/bed-n-breakfast/internal/handlers"
+	"github.com/janomonje/bed-n-breakfast/internal/helpers"
 	"github.com/janomonje/bed-n-breakfast/internal/models"
 	"github.com/janomonje/bed-n-breakfast/internal/render"
 
@@ -19,14 +21,38 @@ const portNumber = ":8080"
 
 var app config.AppConfig
 var session *scs.SessionManager
+var infoLog *log.Logger
+var errorLog *log.Logger
 
 // main is the main function of the application
 func main() {
+	err := run()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Starting application in port %s", portNumber)
+	serve := &http.Server{
+		Addr:    portNumber,
+		Handler: routes(&app),
+	}
+
+	err = serve.ListenAndServe()
+
+}
+
+func run() error {
 	// what will be put in the session
 	gob.Register(models.Reservation{})
 
 	// change this to true when in production
 	app.InProduction = false
+
+	infoLog = log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
+	app.InfoLog = infoLog
+
+	errorLog = log.New(os.Stdout, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
+	app.ErrorLog = errorLog
 
 	// Sessions
 	session = scs.New()
@@ -40,6 +66,7 @@ func main() {
 	templateCache, err := render.CreateTemplateCache()
 	if err != nil {
 		log.Fatal("cannot create template cache", err)
+		return err
 	}
 
 	app.UsedCache = false
@@ -47,15 +74,7 @@ func main() {
 
 	repo := handlers.NewRepo(&app)
 	handlers.NewHandlers(repo)
-
 	render.NewTemplates(&app)
-
-	fmt.Printf("Starting application in port %s", portNumber)
-	serve := &http.Server{
-		Addr:    portNumber,
-		Handler: routes(&app),
-	}
-
-	err = serve.ListenAndServe()
-
+	helpers.NewHelpers(&app)
+	return nil
 }

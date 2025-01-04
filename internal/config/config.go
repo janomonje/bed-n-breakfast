@@ -11,8 +11,9 @@ import (
 
 type AppConfig struct {
 	TemplateCache map[string]*template.Template
-	UsedCache bool
-	InfoLog *log.Logger
-	InProduction bool
-	Session *scs.SessionManager
+	UsedCache     bool
+	InfoLog       *log.Logger
+	ErrorLog      *log.Logger
+	InProduction  bool
+	Session       *scs.SessionManager
 }

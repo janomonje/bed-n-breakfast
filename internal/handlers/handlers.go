@@ -8,6 +8,7 @@ import (
 
 	"github.com/janomonje/bed-n-breakfast/internal/config"
 	"github.com/janomonje/bed-n-breakfast/internal/forms"
+	"github.com/janomonje/bed-n-breakfast/internal/helpers"
 	"github.com/janomonje/bed-n-breakfast/internal/models"
 	"github.com/janomonje/bed-n-breakfast/internal/render"
 )
@@ -36,22 +37,13 @@ func NewHandlers(r *Repository) {
 
 // Home is the home page handler
 func (m *Repository) Home(w http.ResponseWriter, req *http.Request) {
-	remoteIP := req.RemoteAddr
-	m.App.Session.Put(req.Context(), "remoteIP", remoteIP)
 
 	render.RenderTemplate(w, "home.page.tmpl", &models.TemplateData{}, req)
 }
 
 // About is the about page handler
 func (m *Repository) About(w http.ResponseWriter, req *http.Request) {
-	stringMap := make(map[string]string)
-	stringMap["test"] = "Hello World"
-
-	remoteIP := m.App.Session.GetString(req.Context(), "remoteIP")
-	stringMap["remote_ip"] = remoteIP
-	render.RenderTemplate(w, "about.page.tmpl", &models.TemplateData{
-		StringMap: stringMap,
-	}, req)
+	render.RenderTemplate(w, "about.page.tmpl", &models.TemplateData{}, req)
 }
 
 // GeneralsQuarters is the generals-quarters page handler
@@ -80,7 +72,7 @@ func (m *Repository) Reservation(w http.ResponseWriter, req *http.Request) {
 func (m *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
 	err := req.ParseForm()
 	if err != nil {
-		log.Println("error parsing form", err)
+		helpers.ServerError(w, err)
 		return
 	}
 
@@ -116,6 +108,7 @@ func (m *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
 func (m *Repository) ReservationDetails(w http.ResponseWriter, req *http.Request) {
 	reservation, ok := m.App.Session.Get(req.Context(), "reservation").(models.Reservation)
 	if !ok {
+		m.App.ErrorLog.Println("Can't get error from session")
 		log.Println("cannot get item from session")
 		m.App.Session.Put(req.Context(), "error", "Reservation cannot be obtained from session")
 		http.Redirect(w, req, "/", http.StatusTemporaryRedirect)
@@ -161,7 +154,8 @@ func (m *Repository) AvailabilityJSON(w http.ResponseWriter, req *http.Request) 
 
 	output, err := json.MarshalIndent(response, "", "     ")
 	if err != nil {
-		fmt.Println("Error marshalling data", err)
+		helpers.ServerError(w, err)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
