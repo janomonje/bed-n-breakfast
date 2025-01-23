@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/janomonje/bed-n-breakfast/internal/config"
+	driver "github.com/janomonje/bed-n-breakfast/internal/driverdb"
 	"github.com/janomonje/bed-n-breakfast/internal/forms"
 	"github.com/janomonje/bed-n-breakfast/internal/helpers"
 	"github.com/janomonje/bed-n-breakfast/internal/models"
 	"github.com/janomonje/bed-n-breakfast/internal/render"
+	"github.com/janomonje/bed-n-breakfast/internal/repository"
+	"github.com/janomonje/bed-n-breakfast/internal/repository/dbrepo"
 )
 
 // ******** Repository pattern *********
@@ -21,12 +26,14 @@ var Repo *Repository
 // Repository is the repository type
 type Repository struct {
 	App *config.AppConfig
+	DB  repository.DatabaseRepo
 }
 
 // Creates a new repository
-func NewRepo(a *config.AppConfig) *Repository {
+func NewRepo(a *config.AppConfig, db *driver.DB) *Repository {
 	return &Repository{
 		App: a,
+		DB:  dbrepo.NewPosgresRepo(db.SQL, a),
 	}
 }
 
@@ -36,41 +43,65 @@ func NewHandlers(r *Repository) {
 }
 
 // Home is the home page handler
-func (m *Repository) Home(w http.ResponseWriter, req *http.Request) {
+func (model *Repository) Home(w http.ResponseWriter, req *http.Request) {
+	model.DB.AllUsers()
 
-	render.RenderTemplate(w, "home.page.tmpl", &models.TemplateData{}, req)
+	render.Template(w, "home.page.tmpl", &models.TemplateData{}, req)
 }
 
 // About is the about page handler
-func (m *Repository) About(w http.ResponseWriter, req *http.Request) {
-	render.RenderTemplate(w, "about.page.tmpl", &models.TemplateData{}, req)
+func (model *Repository) About(w http.ResponseWriter, req *http.Request) {
+	render.Template(w, "about.page.tmpl", &models.TemplateData{}, req)
 }
 
 // GeneralsQuarters is the generals-quarters page handler
-func (m *Repository) GeneralsQuarters(w http.ResponseWriter, req *http.Request) {
-	render.RenderTemplate(w, "generals.page.tmpl", &models.TemplateData{}, req)
+func (model *Repository) GeneralsQuarters(w http.ResponseWriter, req *http.Request) {
+	render.Template(w, "generals.page.tmpl", &models.TemplateData{}, req)
 }
 
 // MajorsSuite is the majors-suite page handler
-func (m *Repository) MajorsSuite(w http.ResponseWriter, req *http.Request) {
-	render.RenderTemplate(w, "majors.page.tmpl", &models.TemplateData{}, req)
+func (model *Repository) MajorsSuite(w http.ResponseWriter, req *http.Request) {
+	render.Template(w, "majors.page.tmpl", &models.TemplateData{}, req)
 }
 
 // Reservation is the make-reservation page handler
-func (m *Repository) Reservation(w http.ResponseWriter, req *http.Request) {
+func (model *Repository) Reservation(w http.ResponseWriter, req *http.Request) {
 	var emptyReservation models.Reservation
 	data := make(map[string]interface{})
 	data["reservation"] = emptyReservation
 
-	render.RenderTemplate(w, "make-reservation.page.tmpl", &models.TemplateData{
+	render.Template(w, "make-reservation.page.tmpl", &models.TemplateData{
 		Form: forms.New(nil),
 		Data: data,
 	}, req)
 }
 
 // PostReservation handles the posting of a
-func (m *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
+func (model *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
 	err := req.ParseForm()
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	sd := req.Form.Get("start_date")
+	ed := req.Form.Get("end_date")
+
+	// 2020-01-01 -- 01/02 03:04:05PM '06 -0700
+	// parsing date
+	layout := "2006-01-02"
+
+	startDate, err := time.Parse(layout, sd)
+	if err != nil {
+		helpers.ServerError(w, err)
+	}
+
+	endDate, err := time.Parse(layout, ed)
+	if err != nil {
+		helpers.ServerError(w, err)
+	}
+
+	roomID, err := strconv.Atoi(req.Form.Get("room_id"))
 	if err != nil {
 		helpers.ServerError(w, err)
 		return
@@ -81,6 +112,9 @@ func (m *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
 		LastName:  req.Form.Get("last_name"),
 		Email:     req.Form.Get("email"),
 		Phone:     req.Form.Get("phone"),
+		StartDate: startDate,
+		EndDate:   endDate,
+		RoomID:    roomID,
 	}
 
 	form := forms.New(req.PostForm)
@@ -93,48 +127,67 @@ func (m *Repository) PostReservation(w http.ResponseWriter, req *http.Request) {
 		data := make(map[string]interface{})
 		data["reservation"] = reservation
 
-		render.RenderTemplate(w, "make-reservation.page.tmpl", &models.TemplateData{
+		render.Template(w, "make-reservation.page.tmpl", &models.TemplateData{
 			Form: form,
 			Data: data,
 		}, req)
 		return
 	}
 
-	m.App.Session.Put(req.Context(), "reservation", reservation)
+	newReservationID, err := model.DB.InsertReservation(reservation)
+	if err != nil {
+		helpers.ServerError(w, err)
+		return
+	}
+
+	restriction := models.RoomRestriction{
+		StartDate:     startDate,
+		EndDate:       endDate,
+		RoomID:        roomID,
+		ReservationID: newReservationID,
+		RestrictionID: 1,
+	}
+
+	err = model.DB.InsertRoomRestriction(restriction)
+	if err != nil {
+		helpers.ServerError(w, err)
+	}
+
+	model.App.Session.Put(req.Context(), "reservation", reservation)
 	http.Redirect(w, req, "/reservation-details", http.StatusSeeOther)
 }
 
 // ReservationDetails renders all details of newly done reservation to the user
-func (m *Repository) ReservationDetails(w http.ResponseWriter, req *http.Request) {
-	reservation, ok := m.App.Session.Get(req.Context(), "reservation").(models.Reservation)
+func (model *Repository) ReservationDetails(w http.ResponseWriter, req *http.Request) {
+	reservation, ok := model.App.Session.Get(req.Context(), "reservation").(models.Reservation)
 	if !ok {
-		m.App.ErrorLog.Println("Can't get error from session")
+		model.App.ErrorLog.Println("Can't get error from session")
 		log.Println("cannot get item from session")
-		m.App.Session.Put(req.Context(), "error", "Reservation cannot be obtained from session")
+		model.App.Session.Put(req.Context(), "error", "Reservation cannot be obtained from session")
 		http.Redirect(w, req, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	m.App.Session.Remove(req.Context(), "reservation")
+	model.App.Session.Remove(req.Context(), "reservation")
 
 	data := make(map[string]interface{})
 	data["reservation"] = reservation
-	render.RenderTemplate(w, "reservation-details.page.tmpl", &models.TemplateData{
+	render.Template(w, "reservation-details.page.tmpl", &models.TemplateData{
 		Data: data,
 	}, req)
 }
 
 // SearchAvailability is the search-availability page handler
-func (m *Repository) SearchAvailability(w http.ResponseWriter, req *http.Request) {
-	render.RenderTemplate(w, "search-availability.page.tmpl", &models.TemplateData{}, req)
+func (model *Repository) SearchAvailability(w http.ResponseWriter, req *http.Request) {
+	render.Template(w, "search-availability.page.tmpl", &models.TemplateData{}, req)
 }
 
 // Contact is the contact page handles the posting of a reservation form
-func (m *Repository) Contact(w http.ResponseWriter, req *http.Request) {
-	render.RenderTemplate(w, "contact.page.tmpl", &models.TemplateData{}, req)
+func (model *Repository) Contact(w http.ResponseWriter, req *http.Request) {
+	render.Template(w, "contact.page.tmpl", &models.TemplateData{}, req)
 }
 
 // SearchAvailability is the search-availability page handler
-func (m *Repository) PostSearchAvailability(w http.ResponseWriter, req *http.Request) {
+func (model *Repository) PostSearchAvailability(w http.ResponseWriter, req *http.Request) {
 	start := req.Form.Get("start")
 	end := req.Form.Get("end")
 	w.Write([]byte(fmt.Sprintf("arrival date is %s and departure date is %s", start, end)))
@@ -146,7 +199,7 @@ type jsonResponse struct {
 }
 
 // AvailabilityJSON handles request for availability and send json response
-func (m *Repository) AvailabilityJSON(w http.ResponseWriter, req *http.Request) {
+func (model *Repository) AvailabilityJSON(w http.ResponseWriter, req *http.Request) {
 	response := jsonResponse{
 		OK:      true,
 		Message: "Available",

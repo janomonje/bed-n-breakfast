@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/janomonje/bed-n-breakfast/internal/config"
+	driver "github.com/janomonje/bed-n-breakfast/internal/driverdb"
 	"github.com/janomonje/bed-n-breakfast/internal/handlers"
 	"github.com/janomonje/bed-n-breakfast/internal/helpers"
 	"github.com/janomonje/bed-n-breakfast/internal/models"
@@ -26,10 +27,11 @@ var errorLog *log.Logger
 
 // main is the main function of the application
 func main() {
-	err := run()
+	db, err := run()
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer db.SQL.Close()
 
 	fmt.Printf("Starting application in port %s", portNumber)
 	serve := &http.Server{
@@ -41,9 +43,12 @@ func main() {
 
 }
 
-func run() error {
+func run() (*driver.DB, error) {
 	// what will be put in the session
 	gob.Register(models.Reservation{})
+	gob.Register(models.User{})
+	gob.Register(models.Room{})
+	gob.Register(models.Restriction{})
 
 	// change this to true when in production
 	app.InProduction = false
@@ -63,18 +68,26 @@ func run() error {
 
 	app.Session = session
 
+	// connect to database
+	log.Println("Connecting to database...")
+	db, err := driver.ConnectSQL("host=localhost port=5432 dbname=bed-breakfast user=janomonje password=1234")
+	if err != nil {
+		log.Fatal("Cannot connect to database!")
+	}
+	log.Println("Connected to database")
+
 	templateCache, err := render.CreateTemplateCache()
 	if err != nil {
 		log.Fatal("cannot create template cache", err)
-		return err
+		return nil, err
 	}
 
 	app.UsedCache = false
 	app.TemplateCache = templateCache
 
-	repo := handlers.NewRepo(&app)
+	repo := handlers.NewRepo(&app, db)
 	handlers.NewHandlers(repo)
-	render.NewTemplates(&app)
+	render.NewRenderer(&app)
 	helpers.NewHelpers(&app)
-	return nil
+	return db, err
 }
